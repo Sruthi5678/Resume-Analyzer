@@ -1,0 +1,294 @@
+/* Job Description Match Page Styles */
+.jobmatch-page {
+  padding: 3rem 0 5rem 0;
+  background: var(--bg-main);
+  min-height: calc(100vh - 4.25rem);
+}
+
+.jobmatch-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.jobmatch-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-main);
+  margin-bottom: 0.75rem;
+}
+
+.jobmatch-subtitle {
+  font-size: 1.15rem;
+  color: var(--text-muted);
+  max-width: 650px;
+  margin: 0 auto;
+}
+
+.jobmatch-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+/* Left Input Card */
+.jobmatch-input-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.jobmatch-input-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.jobmatch-input-label {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.preset-selector-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.preset-chip {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-light);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+
+.preset-chip:hover, .preset-chip.active {
+  border-color: var(--primary-500);
+  background: var(--primary-50);
+  color: var(--primary-700);
+}
+
+.job-textarea {
+  width: 100%;
+  min-height: 280px;
+  padding: 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1.5px solid var(--border-light);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-main);
+  resize: vertical;
+  background: var(--bg-surface);
+  transition: all var(--transition-fast);
+}
+
+.job-textarea:focus {
+  outline: none;
+  border-color: var(--primary-600);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.match-submit-btn {
+  width: 100%;
+  margin-top: 1.25rem;
+  padding: 0.95rem;
+  font-size: 1.05rem;
+}
+
+/* Right Match Results Panel */
+.jobmatch-results-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Match Score Hero Card */
+.match-score-card {
+  background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
+  color: #FFFFFF;
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.match-score-badge-circle {
+  width: 90px;
+  height: 90px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.1);
+  border: 3px solid #38BDF8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+}
+
+.match-score-big-pct {
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #FFFFFF;
+}
+
+.match-score-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #A5B4FC;
+  text-transform: uppercase;
+}
+
+.match-score-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.match-score-status-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #FFFFFF;
+}
+
+.match-score-summary-text {
+  font-size: 0.875rem;
+  color: #C7D2FE;
+  line-height: 1.5;
+}
+
+/* Keywords Breakdown Card */
+.keywords-breakdown-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  padding: 1.75rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.keywords-section-block {
+  margin-bottom: 1.5rem;
+}
+
+.keywords-section-block:last-child {
+  margin-bottom: 0;
+}
+
+.keywords-header-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.keywords-header-title.matched { color: #065F46; }
+.keywords-header-title.missing { color: #92400E; }
+
+.keywords-pill-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.keyword-pill {
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-full);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.keyword-pill.matched {
+  background: var(--accent-emerald-light);
+  color: #065F46;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.keyword-pill.missing {
+  background: var(--accent-rose-light);
+  color: #9F1239;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+/* Suggestions List */
+.match-suggestions-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  padding: 1.75rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.match-suggestions-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.suggestions-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.suggestion-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  color: var(--text-main);
+}
+
+.suggestion-icon-bullet {
+  color: var(--primary-600);
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+/* Empty state before running analysis */
+.match-empty-placeholder {
+  background: var(--bg-surface);
+  border: 2px dashed var(--border-light);
+  border-radius: var(--radius-xl);
+  padding: 4rem 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+@media (max-width: 960px) {
+  .jobmatch-grid {
+    grid-template-columns: 1fr;
+  }
+}
