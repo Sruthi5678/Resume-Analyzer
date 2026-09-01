@@ -16,6 +16,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { sampleResumes } from '../data/mockData';
 
+const API_URL = 'https://resume-analyzer-jh1c.onrender.com/';
+
 const Upload = () => {
   const {
     user,
@@ -25,6 +27,7 @@ const Upload = () => {
   } = useAuth();
 
   const { addToast } = useToast();
+
   const navigate = useNavigate();
 
   const [isDragging, setIsDragging] = useState(false);
@@ -38,6 +41,7 @@ const Upload = () => {
   // ==========================================
 
   const handleStartAnalysis = async () => {
+
     if (!uploadedFile) {
       addToast(
         'Please select or upload a resume PDF first',
@@ -63,117 +67,200 @@ const Upload = () => {
     }
 
     try {
+
       setIsAnalyzing(true);
 
       console.log('Sending resume to backend...');
 
       const formData = new FormData();
 
-      // Must match FastAPI parameter names
-      formData.append('resume', uploadedFile.rawFile);
-      formData.append('job_description', jobDescription);
+      formData.append(
+        'resume',
+        uploadedFile.rawFile
+      );
+
+      formData.append(
+        'job_description',
+        jobDescription
+      );
+
+      // ==========================================
+      // FETCH BACKEND
+      // ==========================================
 
       const response = await fetch(
-        'http://127.0.0.1:8000/analyze',
+        `${API_URL}/analyze`,
         {
           method: 'POST',
           body: formData
         }
       );
 
-      console.log('Backend response status:', response.status);
+      console.log(
+        'Backend response status:',
+        response.status
+      );
+
+      // ==========================================
+      // HANDLE ERROR
+      // ==========================================
 
       if (!response.ok) {
-        let errorMessage = 'Failed to analyze resume';
+
+        let errorMessage =
+          'Failed to analyze resume';
 
         try {
-          const errorData = await response.json();
-          errorMessage = errorData.detail || errorMessage;
+
+          const errorData =
+            await response.json();
+
+          console.log(
+            'Backend error:',
+            errorData
+          );
+
+          errorMessage =
+            errorData.detail ||
+            errorData.message ||
+            errorMessage;
+
         } catch (error) {
-          console.error('Could not read backend error:', error);
+
+          console.error(
+            'Could not read backend error:',
+            error
+          );
+
         }
 
         throw new Error(errorMessage);
       }
 
-      // Get AI analysis result
+      // ==========================================
+      // GET RESULT
+      // ==========================================
+
       const result = await response.json();
 
-      console.log('AI Analysis Result:', result);
+      console.log(
+        'AI Analysis Result:',
+        result
+      );
 
-      // Save analysis result
+      // ==========================================
+      // SAVE RESULT
+      // ==========================================
+
       sessionStorage.setItem(
         'resumeAnalysis',
         JSON.stringify(result)
       );
 
-      // Save job description
       sessionStorage.setItem(
         'jobDescription',
         jobDescription
       );
 
-      // Verify it was saved
-      const savedResult = sessionStorage.getItem('resumeAnalysis');
+      // ==========================================
+      // VERIFY
+      // ==========================================
 
-      console.log('Saved result:', savedResult);
+      const savedResult =
+        sessionStorage.getItem(
+          'resumeAnalysis'
+        );
+
+      console.log(
+        'Saved result:',
+        savedResult
+      );
 
       if (!savedResult) {
-        throw new Error('Failed to save analysis result');
+        throw new Error(
+          'Failed to save analysis result'
+        );
       }
 
-      // Go to loading/analyzing page
+      // ==========================================
+      // NAVIGATE
+      // ==========================================
+
       navigate('/analyzing');
 
     } catch (error) {
-      console.error('Analysis error:', error);
+
+      console.error(
+        'Analysis error:',
+        error
+      );
 
       addToast(
         error.message ||
-          'Something went wrong while analyzing the resume',
+        'Something went wrong while analyzing the resume',
         'error'
       );
 
     } finally {
+
       setIsAnalyzing(false);
+
     }
   };
 
+
   // ==========================================
-  // DRAG & DROP
+  // DRAG ENTER
   // ==========================================
 
   const handleDragEnter = (e) => {
+
     e.preventDefault();
     e.stopPropagation();
 
     setIsDragging(true);
   };
 
+
+  // ==========================================
+  // DRAG LEAVE
+  // ==========================================
+
   const handleDragLeave = (e) => {
+
     e.preventDefault();
     e.stopPropagation();
 
     setIsDragging(false);
   };
 
+
+  // ==========================================
+  // DRAG OVER
+  // ==========================================
+
   const handleDragOver = (e) => {
+
     e.preventDefault();
     e.stopPropagation();
   };
+
 
   // ==========================================
   // PROCESS FILE
   // ==========================================
 
   const processFile = (file) => {
+
     if (!file) return;
 
-    // Check PDF format
+    // Check PDF
+
     if (
       file.type !== 'application/pdf' &&
       !file.name.toLowerCase().endsWith('.pdf')
     ) {
+
       addToast(
         'Please upload a valid PDF file. Other formats are not supported.',
         'error'
@@ -182,8 +269,11 @@ const Upload = () => {
       return;
     }
 
-    // Check size: 10MB
+
+    // Check size: 10 MB
+
     if (file.size > 10 * 1024 * 1024) {
+
       addToast(
         'File size exceeds the 10MB limit. Please upload a smaller PDF.',
         'error'
@@ -192,18 +282,29 @@ const Upload = () => {
       return;
     }
 
+
     // Format file size
+
     const formattedSize =
       file.size > 1024 * 1024
         ? (file.size / (1024 * 1024)).toFixed(1) + ' MB'
         : Math.round(file.size / 1024) + ' KB';
 
+
+    // Save file
+
     setUploadedFile({
+
       name: file.name,
+
       size: formattedSize,
+
       rawFile: file,
+
       isSample: false
+
     });
+
 
     addToast(
       `"${file.name}" uploaded successfully!`,
@@ -211,11 +312,13 @@ const Upload = () => {
     );
   };
 
+
   // ==========================================
   // HANDLE DROP
   // ==========================================
 
   const handleDrop = (e) => {
+
     e.preventDefault();
     e.stopPropagation();
 
@@ -225,45 +328,65 @@ const Upload = () => {
       e.dataTransfer.files &&
       e.dataTransfer.files.length > 0
     ) {
-      processFile(e.dataTransfer.files[0]);
+
+      processFile(
+        e.dataTransfer.files[0]
+      );
+
     }
   };
+
 
   // ==========================================
   // FILE INPUT
   // ==========================================
 
   const handleFileInputChange = (e) => {
+
     if (
       e.target.files &&
       e.target.files.length > 0
     ) {
-      processFile(e.target.files[0]);
+
+      processFile(
+        e.target.files[0]
+      );
+
     }
   };
+
 
   // ==========================================
   // REMOVE FILE
   // ==========================================
 
   const handleRemoveFile = () => {
+
     setUploadedFile(null);
 
     setJobDescription('');
 
     if (fileInputRef.current) {
+
       fileInputRef.current.value = '';
+
     }
 
-    addToast('File removed', 'info');
+    addToast(
+      'File removed',
+      'info'
+    );
   };
+
 
   // ==========================================
   // SAMPLE RESUME
   // ==========================================
 
   const handleSelectSample = (sampleId) => {
-    const sample = loadSampleResume(sampleId);
+
+    const sample =
+      loadSampleResume(sampleId);
 
     addToast(
       `Loaded sample resume: "${sample.role}"`,
@@ -271,20 +394,24 @@ const Upload = () => {
     );
   };
 
+
   // ==========================================
   // UI
   // ==========================================
 
   return (
+
     <div className="upload-page">
 
       <div className="container">
+
 
         {/* HEADER */}
 
         <div className="upload-header">
 
           <div className="upload-welcome-badge">
+
             <Sparkles
               size={14}
               color="#4F46E5"
@@ -293,79 +420,118 @@ const Upload = () => {
             <span>
               AI RESUME AUDITOR
             </span>
+
           </div>
 
+
           <h1 className="upload-title">
+
             Hello, {user?.name || 'Candidate'} 👋
+
           </h1>
 
+
           <p className="upload-subtitle">
+
             Upload your resume and get AI-powered insights in seconds.
+
           </p>
 
         </div>
+
 
 
         {/* MAIN CARD */}
 
         <div className="upload-main-card">
 
+
           {!uploadedFile ? (
 
+
             /* ================================= */
-            /* NO FILE UPLOADED */
+            /* NO FILE */
             /* ================================= */
 
             <div>
 
+
               {/* DROPZONE */}
 
               <div
+
                 className={`dropzone-container ${
-                  isDragging ? 'is-dragging' : ''
+                  isDragging
+                    ? 'is-dragging'
+                    : ''
                 }`}
 
                 onDragEnter={handleDragEnter}
+
                 onDragLeave={handleDragLeave}
+
                 onDragOver={handleDragOver}
+
                 onDrop={handleDrop}
 
                 onClick={() =>
-                  fileInputRef.current &&
-                  fileInputRef.current.click()
+                  fileInputRef.current?.click()
                 }
+
               >
 
+
                 <input
+
                   type="file"
+
                   ref={fileInputRef}
+
                   onChange={handleFileInputChange}
+
                   accept=".pdf,application/pdf"
-                  style={{ display: 'none' }}
+
+                  style={{
+                    display: 'none'
+                  }}
+
                 />
 
+
                 <div className="dropzone-icon-circle">
+
                   <UploadCloud size={36} />
+
                 </div>
 
+
                 <h3 className="dropzone-title">
+
                   Drag and drop your resume here
+
                 </h3>
 
+
                 <p className="dropzone-hint">
+
                   or{' '}
 
                   <span
+
                     style={{
                       color: 'var(--primary-600)',
                       fontWeight: 700,
                       textDecoration: 'underline'
                     }}
+
                   >
+
                     Browse PDF from your device
+
                   </span>
 
                 </p>
+
 
                 <div className="dropzone-specs">
 
@@ -384,9 +550,11 @@ const Upload = () => {
               </div>
 
 
+
               {/* SAMPLE RESUMES */}
 
               <div className="sample-resumes-box">
+
 
                 <div className="sample-resumes-title">
 
@@ -404,20 +572,30 @@ const Upload = () => {
                   {sampleResumes.map((sample) => (
 
                     <button
+
                       key={sample.id}
+
                       type="button"
+
                       className="sample-resume-btn"
+
                       onClick={() =>
                         handleSelectSample(sample.id)
                       }
+
                     >
 
                       <span className="sample-resume-role">
+
                         {sample.role}
+
                       </span>
 
+
                       <span className="sample-resume-meta">
+
                         {sample.name} • {sample.size}
+
                       </span>
 
                     </button>
@@ -430,7 +608,9 @@ const Upload = () => {
 
             </div>
 
+
           ) : (
+
 
             /* ================================= */
             /* FILE UPLOADED */
@@ -438,34 +618,53 @@ const Upload = () => {
 
             <div>
 
+
               {/* FILE PREVIEW */}
 
               <div className="file-preview-card">
 
+
                 <div className="file-preview-info">
 
+
                   <div className="file-preview-icon">
+
                     <FileText size={24} />
+
                   </div>
+
 
                   <div>
 
+
                     <h4 className="file-name-text">
+
                       {uploadedFile.name}
+
                     </h4>
+
 
                     <div className="file-meta-row">
 
+
                       <span>
+
                         {uploadedFile.size}
+
                       </span>
+
 
                       <span>•</span>
 
+
                       <span className="file-badge-success">
+
                         <CheckCircle2 size={14} />
+
                         Ready for analysis
+
                       </span>
+
 
                     </div>
 
@@ -474,17 +673,28 @@ const Upload = () => {
                 </div>
 
 
+
                 <button
+
                   type="button"
+
                   className="file-remove-btn"
+
                   onClick={handleRemoveFile}
+
                   title="Remove uploaded resume"
+
                   aria-label="Remove uploaded resume"
+
                 >
+
                   <Trash2 size={20} />
+
                 </button>
 
+
               </div>
+
 
 
               {/* JOB DESCRIPTION */}
@@ -495,18 +705,25 @@ const Upload = () => {
                 }}
               >
 
+
                 <label
+
                   style={{
                     display: 'block',
                     fontWeight: '600',
                     marginBottom: '10px'
                   }}
+
                 >
+
                   Job Description
+
                 </label>
 
 
+
                 <textarea
+
                   value={jobDescription}
 
                   onChange={(e) =>
@@ -522,92 +739,142 @@ We are looking for a Software Engineer with skills in React, Java, Spring Boot, 
                   rows={8}
 
                   style={{
+
                     width: '100%',
+
                     padding: '14px',
+
                     borderRadius: '10px',
+
                     border: '1px solid #ddd',
+
                     fontSize: '15px',
+
                     resize: 'vertical',
+
                     boxSizing: 'border-box'
+
                   }}
+
                 />
 
 
                 <p
+
                   style={{
                     fontSize: '13px',
                     color: '#666',
                     marginTop: '6px'
                   }}
+
                 >
+
                   Paste the job description to compare your resume with the job requirements.
+
                 </p>
+
 
               </div>
 
 
-              {/* ACTION BUTTONS */}
+
+              {/* BUTTONS */}
 
               <div className="upload-action-section">
 
+
                 <button
+
                   type="button"
+
                   className="btn btn-primary analyze-main-btn"
+
                   onClick={handleStartAnalysis}
+
                   disabled={isAnalyzing}
+
                 >
+
 
                   <Sparkles size={20} />
 
+
                   <span>
+
                     {isAnalyzing
                       ? 'Analyzing Resume...'
                       : 'Analyze Resume'}
+
                   </span>
 
+
                   {!isAnalyzing && (
+
                     <ArrowRight size={20} />
+
                   )}
 
+
                 </button>
+
 
 
                 <button
+
                   type="button"
+
                   className="btn btn-ghost btn-sm"
+
                   onClick={handleRemoveFile}
+
                   disabled={isAnalyzing}
+
                 >
+
                   Choose a different file
+
                 </button>
 
+
               </div>
+
 
             </div>
 
           )}
 
 
+
           {/* SECURITY */}
 
           <div className="security-callout">
 
+
             <ShieldCheck
+
               size={18}
+
               className="security-icon"
+
             />
 
+
             <span>
+
               Your resume is private and securely processed.
+
             </span>
 
+
           </div>
+
 
         </div>
 
       </div>
 
     </div>
+
   );
 };
 
