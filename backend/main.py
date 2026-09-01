@@ -1,12 +1,8 @@
-import truststore
-
-# Use Windows/system certificate store
-truststore.inject_into_ssl()
-
 import os
 import io
 import json
 import re
+
 import numpy as np
 import faiss
 
@@ -20,10 +16,7 @@ from google import genai
 # 1. FASTAPI APP
 # ==========================================
 
-app = FastAPI(
-    title="ResumeIQ AI API",
-    version="1.0.0"
-)
+app = FastAPI(title="ResumeIQ AI API")
 
 
 # ==========================================
@@ -35,9 +28,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-
-        # Add your Vercel URL here later
-        # "https://your-project.vercel.app"
+        "https://resume-analyzer-tau-virid.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -52,11 +43,9 @@ app.add_middleware(
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
-    print("WARNING: GEMINI_API_KEY environment variable not found!")
+    raise ValueError("GEMINI_API_KEY environment variable is not set")
 
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ==========================================
@@ -139,17 +128,13 @@ knowledge_base = [
 def chunk_text(text, chunk_size=300, overlap=50):
 
     chunks = []
-
     start = 0
 
     while start < len(text):
 
         end = start + chunk_size
 
-        chunk = text[start:end].strip()
-
-        if chunk:
-            chunks.append(chunk)
+        chunks.append(text[start:end].strip())
 
         start = end - overlap
 
@@ -157,260 +142,132 @@ def chunk_text(text, chunk_size=300, overlap=50):
 
 
 # ==========================================
-# CREATE KNOWLEDGE CHUNKS
+# 6. CREATE CHUNKS
 # ==========================================
 
 all_chunks = []
 
 for document in knowledge_base:
-    all_chunks.extend(
-        chunk_text(document)
-    )
+    all_chunks.extend(chunk_text(document))
 
 
 # ==========================================
-# 6. CREATE EMBEDDINGS + FAISS
+# 7. CREATE EMBEDDINGS + FAISS
 # ==========================================
 
 def create_vector_database():
 
     response = client.models.embed_content(
-
         model="gemini-embedding-001",
-
         contents=all_chunks
-
     )
-
 
     embeddings = np.array(
-
-        [
-            item.values
-            for item in response.embeddings
-        ],
-
+        [item.values for item in response.embeddings],
         dtype=np.float32
-
     )
 
-
-    # Normalize embeddings
+    # Normalize vectors for similarity search
     faiss.normalize_L2(embeddings)
-
 
     dimension = embeddings.shape[1]
 
+    vector_index = faiss.IndexFlatIP(dimension)
 
-    # Cosine similarity using inner product
-    vector_index = faiss.IndexFlatIP(
-        dimension
-    )
-
-
-    vector_index.add(
-        embeddings
-    )
-
+    vector_index.add(embeddings)
 
     return vector_index
 
 
 # ==========================================
-# CREATE RAG DATABASE SAFELY
+# 8. CREATE RAG DATABASE
 # ==========================================
-
-index = None
 
 print("Creating RAG Vector Database...")
 
+index = create_vector_database()
 
-try:
-
-    index = create_vector_database()
-
-    print("RAG Vector Database Ready!")
-
-
-except Exception as e:
-
-    print(
-        "WARNING: RAG Vector Database could not be created."
-    )
-
-    print(
-        "Reason:",
-        str(e)
-    )
-
-    print(
-        "Server will continue using fallback knowledge."
-    )
+print("RAG Vector Database Ready!")
 
 
 # ==========================================
-# 7. RAG RETRIEVAL FUNCTION
+# 9. RAG RETRIEVAL FUNCTION
 # ==========================================
 
 def retrieve_context(query, top_k=3):
 
-    # --------------------------------------
-    # FALLBACK IF VECTOR DATABASE FAILED
-    # --------------------------------------
+    response = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=query
+    )
 
-    if index is None:
+    query_embedding = np.array(
+        [response.embeddings[0].values],
+        dtype=np.float32
+    )
 
-        print(
-            "RAG database unavailable."
-        )
+    faiss.normalize_L2(query_embedding)
 
-        print(
-            "Using fallback knowledge."
-        )
+    scores, indices = index.search(
+        query_embedding,
+        top_k
+    )
 
-        return all_chunks[:top_k]
+    retrieved = []
 
+    for i in indices[0]:
+        if i >= 0:
+            retrieved.append(all_chunks[i])
 
-    try:
-
-        # ----------------------------------
-        # CREATE QUERY EMBEDDING
-        # ----------------------------------
-
-        response = client.models.embed_content(
-
-            model="gemini-embedding-001",
-
-            contents=query
-
-        )
-
-
-        query_embedding = np.array(
-
-            [
-                response.embeddings[0].values
-            ],
-
-            dtype=np.float32
-
-        )
-
-
-        # Normalize query
-        faiss.normalize_L2(
-            query_embedding
-        )
-
-
-        # Search FAISS
-        scores, indices = index.search(
-
-            query_embedding,
-
-            top_k
-
-        )
-
-
-        retrieved = []
-
-
-        for i in indices[0]:
-
-            if i >= 0:
-
-                retrieved.append(
-                    all_chunks[i]
-                )
-
-
-        return retrieved
-
-
-    except Exception as e:
-
-        print(
-            "RAG retrieval error:",
-            str(e)
-        )
-
-
-        # ----------------------------------
-        # FALLBACK KNOWLEDGE
-        # ----------------------------------
-
-        return all_chunks[:top_k]
+    return retrieved
 
 
 # ==========================================
-# 8. PDF TEXT EXTRACTION
+# 10. PDF TEXT EXTRACTION
 # ==========================================
 
 def extract_pdf_text(pdf_bytes):
 
-    reader = PdfReader(
-        io.BytesIO(pdf_bytes)
-    )
-
+    reader = PdfReader(io.BytesIO(pdf_bytes))
 
     text = ""
-
 
     for page in reader.pages:
 
         page_text = page.extract_text()
 
-
         if page_text:
+            text += page_text + "\n"
 
-            text += (
-                page_text + "\n"
-            )
-
-
-    return text.strip()
+    return text
 
 
 # ==========================================
-# 9. HOME API
+# 11. HOME API
 # ==========================================
 
 @app.get("/")
 def home():
 
     return {
-
-        "message":
-            "ResumeIQ AI Backend Running!",
-
-        "rag_status":
-            "active"
-            if index is not None
-            else "fallback"
-
+        "message": "ResumeIQ RAG Backend Running!"
     }
 
 
 # ==========================================
-# 10. HEALTH CHECK
+# 12. HEALTH CHECK
 # ==========================================
 
 @app.get("/health")
 def health():
 
     return {
-
-        "status": "healthy",
-
-        "rag_available":
-            index is not None
-
+        "status": "healthy"
     }
 
 
 # ==========================================
-# 11. ANALYZE RESUME API
+# 13. ANALYZE RESUME API
 # ==========================================
 
 @app.post("/analyze")
@@ -424,87 +281,68 @@ async def analyze_resume(
 
     try:
 
-        # ----------------------------------
-        # READ RESUME
-        # ----------------------------------
+        # -----------------------------
+        # Validate file
+        # -----------------------------
+
+        if not resume.filename.lower().endswith(".pdf"):
+            raise HTTPException(
+                status_code=400,
+                detail="Please upload a PDF resume."
+            )
+
+
+        # -----------------------------
+        # Read Resume
+        # -----------------------------
 
         pdf_bytes = await resume.read()
 
+        resume_text = extract_pdf_text(pdf_bytes)
 
-        if not pdf_bytes:
-
+        if not resume_text.strip():
             raise HTTPException(
-
                 status_code=400,
-
-                detail="Uploaded resume is empty."
-
+                detail="Could not extract text from the PDF."
             )
 
 
-        # ----------------------------------
-        # EXTRACT PDF TEXT
-        # ----------------------------------
-
-        resume_text = extract_pdf_text(
-            pdf_bytes
-        )
-
-
-        if not resume_text:
-
-            raise HTTPException(
-
-                status_code=400,
-
-                detail=(
-                    "Could not extract text from the PDF. "
-                    "Please upload a text-based PDF."
-                )
-
-            )
-
-
-        # ----------------------------------
-        # RAG QUERY
-        # ----------------------------------
+        # -----------------------------
+        # RAG Query
+        # -----------------------------
 
         rag_query = f"""
-
 Find relevant ATS guidelines, resume improvement
-suggestions and technical skills.
+suggestions and technical skills for this job.
 
 JOB DESCRIPTION:
 
 {job_description}
-
 """
 
 
-        # ----------------------------------
-        # RETRIEVE RAG KNOWLEDGE
-        # ----------------------------------
+        # -----------------------------
+        # Retrieve RAG Knowledge
+        # -----------------------------
 
         retrieved_context = retrieve_context(
             rag_query
         )
-
 
         rag_context = "\n\n".join(
             retrieved_context
         )
 
 
-        # ----------------------------------
-        # GEMINI PROMPT
-        # ----------------------------------
+        # -----------------------------
+        # Gemini Prompt
+        # -----------------------------
 
         prompt = f"""
 You are ResumeIQ, an AI-powered Resume Analyzer.
 
-Analyze the candidate's resume against the provided job description.
-
-Use the retrieved knowledge to improve your recommendations.
+Use the retrieved RAG knowledge, resume and job description
+to provide a detailed analysis.
 
 ========================
 RETRIEVED RAG KNOWLEDGE
@@ -529,7 +367,7 @@ JOB DESCRIPTION
 
 Return ONLY valid JSON.
 
-Use EXACTLY this structure:
+Use exactly this structure:
 
 {{
     "overall_score": 0,
@@ -544,133 +382,65 @@ Use EXACTLY this structure:
     "summary": ""
 }}
 
+Rules:
 
-IMPORTANT RULES:
-
-1. overall_score must be between 0 and 100.
-2. ats_score must be between 0 and 100.
-3. Compare the resume directly with the job description.
+1. Scores must be between 0 and 100.
+2. Compare the resume with the job description.
+3. Use the RAG knowledge for suggestions.
 4. Do not invent skills that are not supported by the resume.
-5. Identify important missing skills.
-6. Give useful and realistic suggestions.
-7. Return ONLY valid JSON.
-8. Do not use Markdown.
-9. Do not wrap JSON in ```json.
+5. Identify relevant missing skills.
+6. Return ONLY valid JSON.
 """
 
 
-        # ----------------------------------
-        # GEMINI ANALYSIS
-        # ----------------------------------
+        # -----------------------------
+        # Gemini Analysis
+        # -----------------------------
 
         response = client.models.generate_content(
-
             model="gemini-2.5-flash",
-
             contents=prompt
-
         )
 
 
-        # ----------------------------------
-        # GET RESPONSE
-        # ----------------------------------
+        # -----------------------------
+        # Clean JSON
+        # -----------------------------
 
         result_text = response.text.strip()
 
-
-        # ----------------------------------
-        # CLEAN MARKDOWN IF PRESENT
-        # ----------------------------------
-
         result_text = re.sub(
-
-            r"^```json\s*",
-
+            r"^```json\s*|\s*```$",
             "",
-
-            result_text,
-
-            flags=re.IGNORECASE
-
-        )
-
-
-        result_text = re.sub(
-
-            r"^```\s*",
-
-            "",
-
             result_text
-
-        )
-
-
-        result_text = re.sub(
-
-            r"\s*```$",
-
-            "",
-
-            result_text
-
         ).strip()
 
 
-        # ----------------------------------
-        # CONVERT JSON
-        # ----------------------------------
+        # -----------------------------
+        # Convert JSON
+        # -----------------------------
 
         analysis_result = json.loads(
             result_text
         )
 
 
-        # ----------------------------------
-        # RETURN RESULT
-        # ----------------------------------
+        # -----------------------------
+        # Return Result
+        # -----------------------------
 
         return analysis_result
 
 
     except HTTPException:
-
         raise
-
-
-    except json.JSONDecodeError as e:
-
-        print(
-            "JSON PARSE ERROR:",
-            str(e)
-        )
-
-
-        raise HTTPException(
-
-            status_code=500,
-
-            detail=(
-                "AI returned an invalid response. "
-                "Please try again."
-            )
-
-        )
 
 
     except Exception as e:
 
-        print(
-            "ERROR:",
-            str(e)
-        )
-
+        print("ERROR:", str(e))
 
         raise HTTPException(
-
             status_code=500,
-
             detail=str(e)
-
         )
