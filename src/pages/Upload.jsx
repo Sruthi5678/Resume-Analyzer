@@ -16,18 +16,22 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { sampleResumes } from '../data/mockData';
 
-const API_URL = 'https://resume-analyzer-jh1c.onrender.com/';
+// ==========================================
+// BACKEND API URL
+// ==========================================
+
+const API_URL = 'https://resume-analyzer-jh1c.onrender.com';
 
 const Upload = () => {
   const {
     user,
     uploadedFile,
     setUploadedFile,
-    loadSampleResume
+    loadSampleResume,
+    setCurrentAnalysis
   } = useAuth();
 
   const { addToast } = useToast();
-
   const navigate = useNavigate();
 
   const [isDragging, setIsDragging] = useState(false);
@@ -41,7 +45,6 @@ const Upload = () => {
   // ==========================================
 
   const handleStartAnalysis = async () => {
-
     if (!uploadedFile) {
       addToast(
         'Please select or upload a resume PDF first',
@@ -52,7 +55,7 @@ const Upload = () => {
 
     if (!uploadedFile.rawFile) {
       addToast(
-        'Please upload a real PDF file. Sample resumes cannot be analyzed yet.',
+        'Please upload a real PDF file. Sample resumes cannot be analyzed.',
         'warning'
       );
       return;
@@ -67,26 +70,20 @@ const Upload = () => {
     }
 
     try {
-
       setIsAnalyzing(true);
 
       console.log('Sending resume to backend...');
+      console.log('Backend URL:', `${API_URL}/analyze`);
 
       const formData = new FormData();
 
-      formData.append(
-        'resume',
-        uploadedFile.rawFile
-      );
+      // Must exactly match FastAPI parameter names
+      formData.append('resume', uploadedFile.rawFile);
 
       formData.append(
         'job_description',
         jobDescription
       );
-
-      // ==========================================
-      // FETCH BACKEND
-      // ==========================================
 
       const response = await fetch(
         `${API_URL}/analyze`,
@@ -102,21 +99,17 @@ const Upload = () => {
       );
 
       // ==========================================
-      // HANDLE ERROR
+      // HANDLE BACKEND ERROR
       // ==========================================
 
       if (!response.ok) {
-
-        let errorMessage =
-          'Failed to analyze resume';
+        let errorMessage = 'Failed to analyze resume';
 
         try {
+          const errorData = await response.json();
 
-          const errorData =
-            await response.json();
-
-          console.log(
-            'Backend error:',
+          console.error(
+            'Backend Error:',
             errorData
           );
 
@@ -126,19 +119,17 @@ const Upload = () => {
             errorMessage;
 
         } catch (error) {
-
           console.error(
             'Could not read backend error:',
             error
           );
-
         }
 
         throw new Error(errorMessage);
       }
 
       // ==========================================
-      // GET RESULT
+      // GET ANALYSIS RESULT
       // ==========================================
 
       const result = await response.json();
@@ -149,7 +140,25 @@ const Upload = () => {
       );
 
       // ==========================================
-      // SAVE RESULT
+      // VALIDATE RESULT
+      // ==========================================
+
+      if (!result || typeof result !== 'object') {
+        throw new Error(
+          'Invalid analysis result received from backend'
+        );
+      }
+
+      // ==========================================
+      // SAVE TO CONTEXT
+      // ==========================================
+
+      if (setCurrentAnalysis) {
+        setCurrentAnalysis(result);
+      }
+
+      // ==========================================
+      // SAVE TO SESSION STORAGE
       // ==========================================
 
       sessionStorage.setItem(
@@ -162,34 +171,22 @@ const Upload = () => {
         jobDescription
       );
 
-      // ==========================================
-      // VERIFY
-      // ==========================================
-
-      const savedResult =
-        sessionStorage.getItem(
-          'resumeAnalysis'
-        );
-
-      console.log(
-        'Saved result:',
-        savedResult
+      sessionStorage.setItem(
+        'resumeName',
+        uploadedFile.name
       );
 
-      if (!savedResult) {
-        throw new Error(
-          'Failed to save analysis result'
-        );
-      }
+      console.log(
+        'Analysis successfully saved!'
+      );
 
       // ==========================================
-      // NAVIGATE
+      // GO TO ANALYZING PAGE
       // ==========================================
 
       navigate('/analyzing');
 
     } catch (error) {
-
       console.error(
         'Analysis error:',
         error
@@ -202,45 +199,30 @@ const Upload = () => {
       );
 
     } finally {
-
       setIsAnalyzing(false);
-
     }
   };
 
 
   // ==========================================
-  // DRAG ENTER
+  // DRAG EVENTS
   // ==========================================
 
   const handleDragEnter = (e) => {
-
     e.preventDefault();
     e.stopPropagation();
 
     setIsDragging(true);
   };
 
-
-  // ==========================================
-  // DRAG LEAVE
-  // ==========================================
-
   const handleDragLeave = (e) => {
-
     e.preventDefault();
     e.stopPropagation();
 
     setIsDragging(false);
   };
 
-
-  // ==========================================
-  // DRAG OVER
-  // ==========================================
-
   const handleDragOver = (e) => {
-
     e.preventDefault();
     e.stopPropagation();
   };
@@ -251,60 +233,42 @@ const Upload = () => {
   // ==========================================
 
   const processFile = (file) => {
-
     if (!file) return;
 
-    // Check PDF
+    const isPDF =
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf');
 
-    if (
-      file.type !== 'application/pdf' &&
-      !file.name.toLowerCase().endsWith('.pdf')
-    ) {
-
+    if (!isPDF) {
       addToast(
-        'Please upload a valid PDF file. Other formats are not supported.',
+        'Please upload a valid PDF file.',
         'error'
       );
 
       return;
     }
 
-
-    // Check size: 10 MB
-
+    // Maximum 10 MB
     if (file.size > 10 * 1024 * 1024) {
-
       addToast(
-        'File size exceeds the 10MB limit. Please upload a smaller PDF.',
+        'File size exceeds the 10MB limit.',
         'error'
       );
 
       return;
     }
-
-
-    // Format file size
 
     const formattedSize =
       file.size > 1024 * 1024
-        ? (file.size / (1024 * 1024)).toFixed(1) + ' MB'
-        : Math.round(file.size / 1024) + ' KB';
-
-
-    // Save file
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(file.size / 1024)} KB`;
 
     setUploadedFile({
-
       name: file.name,
-
       size: formattedSize,
-
       rawFile: file,
-
       isSample: false
-
     });
-
 
     addToast(
       `"${file.name}" uploaded successfully!`,
@@ -314,11 +278,10 @@ const Upload = () => {
 
 
   // ==========================================
-  // HANDLE DROP
+  // HANDLE FILE DROP
   // ==========================================
 
   const handleDrop = (e) => {
-
     e.preventDefault();
     e.stopPropagation();
 
@@ -328,30 +291,25 @@ const Upload = () => {
       e.dataTransfer.files &&
       e.dataTransfer.files.length > 0
     ) {
-
       processFile(
         e.dataTransfer.files[0]
       );
-
     }
   };
 
 
   // ==========================================
-  // FILE INPUT
+  // HANDLE FILE INPUT
   // ==========================================
 
   const handleFileInputChange = (e) => {
-
     if (
       e.target.files &&
       e.target.files.length > 0
     ) {
-
       processFile(
         e.target.files[0]
       );
-
     }
   };
 
@@ -361,15 +319,12 @@ const Upload = () => {
   // ==========================================
 
   const handleRemoveFile = () => {
-
     setUploadedFile(null);
 
     setJobDescription('');
 
     if (fileInputRef.current) {
-
       fileInputRef.current.value = '';
-
     }
 
     addToast(
@@ -384,7 +339,6 @@ const Upload = () => {
   // ==========================================
 
   const handleSelectSample = (sampleId) => {
-
     const sample =
       loadSampleResume(sampleId);
 
@@ -400,18 +354,15 @@ const Upload = () => {
   // ==========================================
 
   return (
-
     <div className="upload-page">
 
       <div className="container">
-
 
         {/* HEADER */}
 
         <div className="upload-header">
 
           <div className="upload-welcome-badge">
-
             <Sparkles
               size={14}
               color="#4F46E5"
@@ -420,150 +371,99 @@ const Upload = () => {
             <span>
               AI RESUME AUDITOR
             </span>
-
           </div>
 
 
           <h1 className="upload-title">
-
             Hello, {user?.name || 'Candidate'} 👋
-
           </h1>
 
 
           <p className="upload-subtitle">
-
             Upload your resume and get AI-powered insights in seconds.
-
           </p>
 
         </div>
-
 
 
         {/* MAIN CARD */}
 
         <div className="upload-main-card">
 
-
           {!uploadedFile ? (
 
-
-            /* ================================= */
-            /* NO FILE */
-            /* ================================= */
-
             <div>
-
 
               {/* DROPZONE */}
 
               <div
-
                 className={`dropzone-container ${
-                  isDragging
-                    ? 'is-dragging'
-                    : ''
+                  isDragging ? 'is-dragging' : ''
                 }`}
 
                 onDragEnter={handleDragEnter}
-
                 onDragLeave={handleDragLeave}
-
                 onDragOver={handleDragOver}
-
                 onDrop={handleDrop}
 
                 onClick={() =>
                   fileInputRef.current?.click()
                 }
-
               >
 
-
                 <input
-
                   type="file"
-
                   ref={fileInputRef}
-
                   onChange={handleFileInputChange}
-
                   accept=".pdf,application/pdf"
-
-                  style={{
-                    display: 'none'
-                  }}
-
+                  style={{ display: 'none' }}
                 />
 
 
                 <div className="dropzone-icon-circle">
-
                   <UploadCloud size={36} />
-
                 </div>
 
 
                 <h3 className="dropzone-title">
-
                   Drag and drop your resume here
-
                 </h3>
 
 
                 <p className="dropzone-hint">
-
                   or{' '}
 
                   <span
-
                     style={{
                       color: 'var(--primary-600)',
                       fontWeight: 700,
                       textDecoration: 'underline'
                     }}
-
                   >
-
                     Browse PDF from your device
-
                   </span>
-
                 </p>
 
 
                 <div className="dropzone-specs">
-
-                  <span>
-                    Supported format: PDF
-                  </span>
-
+                  <span>Supported format: PDF</span>
                   <span>•</span>
-
-                  <span>
-                    Maximum size: 10MB
-                  </span>
-
+                  <span>Maximum size: 10MB</span>
                 </div>
 
               </div>
-
 
 
               {/* SAMPLE RESUMES */}
 
               <div className="sample-resumes-box">
 
-
                 <div className="sample-resumes-title">
-
                   <FileCode size={16} />
 
                   <span>
                     Or try with a sample resume:
                   </span>
-
                 </div>
 
 
@@ -572,30 +472,22 @@ const Upload = () => {
                   {sampleResumes.map((sample) => (
 
                     <button
-
                       key={sample.id}
-
                       type="button"
-
                       className="sample-resume-btn"
 
                       onClick={() =>
                         handleSelectSample(sample.id)
                       }
-
                     >
 
                       <span className="sample-resume-role">
-
                         {sample.role}
-
                       </span>
 
 
                       <span className="sample-resume-meta">
-
                         {sample.name} • {sample.size}
-
                       </span>
 
                     </button>
@@ -608,63 +500,42 @@ const Upload = () => {
 
             </div>
 
-
           ) : (
 
-
-            /* ================================= */
-            /* FILE UPLOADED */
-            /* ================================= */
-
             <div>
-
 
               {/* FILE PREVIEW */}
 
               <div className="file-preview-card">
 
-
                 <div className="file-preview-info">
 
-
                   <div className="file-preview-icon">
-
                     <FileText size={24} />
-
                   </div>
 
 
                   <div>
 
-
                     <h4 className="file-name-text">
-
                       {uploadedFile.name}
-
                     </h4>
 
 
                     <div className="file-meta-row">
 
-
                       <span>
-
                         {uploadedFile.size}
-
                       </span>
-
 
                       <span>•</span>
 
 
                       <span className="file-badge-success">
-
                         <CheckCircle2 size={14} />
 
                         Ready for analysis
-
                       </span>
-
 
                     </div>
 
@@ -673,28 +544,15 @@ const Upload = () => {
                 </div>
 
 
-
                 <button
-
                   type="button"
-
                   className="file-remove-btn"
-
                   onClick={handleRemoveFile}
-
-                  title="Remove uploaded resume"
-
-                  aria-label="Remove uploaded resume"
-
                 >
-
                   <Trash2 size={20} />
-
                 </button>
 
-
               </div>
-
 
 
               {/* JOB DESCRIPTION */}
@@ -705,25 +563,18 @@ const Upload = () => {
                 }}
               >
 
-
                 <label
-
                   style={{
                     display: 'block',
                     fontWeight: '600',
                     marginBottom: '10px'
                   }}
-
                 >
-
                   Job Description
-
                 </label>
 
 
-
                 <textarea
-
                   value={jobDescription}
 
                   onChange={(e) =>
@@ -739,142 +590,98 @@ We are looking for a Software Engineer with skills in React, Java, Spring Boot, 
                   rows={8}
 
                   style={{
-
                     width: '100%',
-
                     padding: '14px',
-
                     borderRadius: '10px',
-
                     border: '1px solid #ddd',
-
                     fontSize: '15px',
-
                     resize: 'vertical',
-
                     boxSizing: 'border-box'
-
                   }}
-
                 />
 
 
                 <p
-
                   style={{
                     fontSize: '13px',
                     color: '#666',
                     marginTop: '6px'
                   }}
-
                 >
-
                   Paste the job description to compare your resume with the job requirements.
-
                 </p>
-
 
               </div>
 
 
-
-              {/* BUTTONS */}
+              {/* ACTION BUTTON */}
 
               <div className="upload-action-section">
 
-
                 <button
-
                   type="button"
-
                   className="btn btn-primary analyze-main-btn"
 
                   onClick={handleStartAnalysis}
 
                   disabled={isAnalyzing}
-
                 >
-
 
                   <Sparkles size={20} />
 
 
                   <span>
-
                     {isAnalyzing
                       ? 'Analyzing Resume...'
                       : 'Analyze Resume'}
-
                   </span>
 
 
                   {!isAnalyzing && (
-
                     <ArrowRight size={20} />
-
                   )}
-
 
                 </button>
 
 
-
                 <button
-
                   type="button"
-
                   className="btn btn-ghost btn-sm"
 
                   onClick={handleRemoveFile}
 
                   disabled={isAnalyzing}
-
                 >
-
                   Choose a different file
-
                 </button>
 
-
               </div>
-
 
             </div>
 
           )}
 
 
-
           {/* SECURITY */}
 
           <div className="security-callout">
 
-
             <ShieldCheck
-
               size={18}
-
               className="security-icon"
-
             />
 
-
             <span>
-
               Your resume is private and securely processed.
-
             </span>
 
-
           </div>
-
 
         </div>
 
       </div>
 
     </div>
-
   );
 };
 
