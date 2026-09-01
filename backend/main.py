@@ -1,58 +1,33 @@
 import truststore
+
+# Use Windows/system certificate store
 truststore.inject_into_ssl()
 
+import os
 import io
 import json
 import re
-import os
-
 import numpy as np
 import faiss
 
-from dotenv import load_dotenv
-
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
 from pypdf import PdfReader
 from google import genai
 
 
 # ==========================================
-# LOAD ENVIRONMENT VARIABLES
-# ==========================================
-
-load_dotenv()
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not GEMINI_API_KEY:
-    raise ValueError(
-        "GEMINI_API_KEY not found. "
-        "Please create backend/.env and add your API key."
-    )
-
-
-# ==========================================
-# GEMINI CLIENT
-# ==========================================
-
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
-
-
-# ==========================================
-# FASTAPI APP
+# 1. FASTAPI APP
 # ==========================================
 
 app = FastAPI(
-    title="ResumeIQ AI API"
+    title="ResumeIQ AI API",
+    version="1.0.0"
 )
 
 
 # ==========================================
-# CORS
+# 2. CORS
 # ==========================================
 
 app.add_middleware(
@@ -61,7 +36,8 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
 
-        # Later add your Vercel URL here
+        # Add your Vercel URL here later
+        # "https://your-project.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -70,7 +46,21 @@ app.add_middleware(
 
 
 # ==========================================
-# RAG KNOWLEDGE BASE
+# 3. GEMINI API
+# ==========================================
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if not GEMINI_API_KEY:
+    print("WARNING: GEMINI_API_KEY environment variable not found!")
+
+client = genai.Client(
+    api_key=GEMINI_API_KEY
+)
+
+
+# ==========================================
+# 4. RAG KNOWLEDGE BASE
 # ==========================================
 
 knowledge_base = [
@@ -143,7 +133,7 @@ knowledge_base = [
 
 
 # ==========================================
-# TEXT CHUNKING
+# 5. CHUNKING FUNCTION
 # ==========================================
 
 def chunk_text(text, chunk_size=300, overlap=50):
@@ -167,25 +157,22 @@ def chunk_text(text, chunk_size=300, overlap=50):
 
 
 # ==========================================
-# CREATE ALL RAG CHUNKS
+# CREATE KNOWLEDGE CHUNKS
 # ==========================================
 
 all_chunks = []
 
 for document in knowledge_base:
-
-    chunks = chunk_text(document)
-
-    all_chunks.extend(chunks)
+    all_chunks.extend(
+        chunk_text(document)
+    )
 
 
 # ==========================================
-# CREATE VECTOR DATABASE
+# 6. CREATE EMBEDDINGS + FAISS
 # ==========================================
 
 def create_vector_database():
-
-    print("Creating embeddings...")
 
     response = client.models.embed_content(
 
@@ -208,13 +195,14 @@ def create_vector_database():
     )
 
 
-    # Normalize vectors
+    # Normalize embeddings
     faiss.normalize_L2(embeddings)
 
 
     dimension = embeddings.shape[1]
 
 
+    # Cosine similarity using inner product
     vector_index = faiss.IndexFlatIP(
         dimension
     )
@@ -229,81 +217,134 @@ def create_vector_database():
 
 
 # ==========================================
-# INITIALIZE RAG
+# CREATE RAG DATABASE SAFELY
 # ==========================================
 
-print("===================================")
-print("Creating ResumeIQ RAG Database...")
-print("===================================")
+index = None
 
-index = create_vector_database()
+print("Creating RAG Vector Database...")
 
-print("===================================")
-print("RAG Vector Database Ready!")
-print("===================================")
+
+try:
+
+    index = create_vector_database()
+
+    print("RAG Vector Database Ready!")
+
+
+except Exception as e:
+
+    print(
+        "WARNING: RAG Vector Database could not be created."
+    )
+
+    print(
+        "Reason:",
+        str(e)
+    )
+
+    print(
+        "Server will continue using fallback knowledge."
+    )
 
 
 # ==========================================
-# RAG RETRIEVAL
+# 7. RAG RETRIEVAL FUNCTION
 # ==========================================
 
 def retrieve_context(query, top_k=3):
 
-    response = client.models.embed_content(
+    # --------------------------------------
+    # FALLBACK IF VECTOR DATABASE FAILED
+    # --------------------------------------
 
-        model="gemini-embedding-001",
+    if index is None:
 
-        contents=query
+        print(
+            "RAG database unavailable."
+        )
 
-    )
+        print(
+            "Using fallback knowledge."
+        )
 
-
-    query_embedding = np.array(
-
-        [
-            response.embeddings[0].values
-        ],
-
-        dtype=np.float32
-
-    )
+        return all_chunks[:top_k]
 
 
-    faiss.normalize_L2(
-        query_embedding
-    )
+    try:
+
+        # ----------------------------------
+        # CREATE QUERY EMBEDDING
+        # ----------------------------------
+
+        response = client.models.embed_content(
+
+            model="gemini-embedding-001",
+
+            contents=query
+
+        )
 
 
-    scores, indices = index.search(
+        query_embedding = np.array(
 
-        query_embedding,
+            [
+                response.embeddings[0].values
+            ],
 
-        top_k
+            dtype=np.float32
 
-    )
-
-
-    retrieved_chunks = []
-
-
-    for chunk_index in indices[0]:
-
-        if (
-            chunk_index >= 0
-            and
-            chunk_index < len(all_chunks)
-        ):
-
-            retrieved_chunks.append(
-                all_chunks[chunk_index]
-            )
+        )
 
 
-    return retrieved_chunks
+        # Normalize query
+        faiss.normalize_L2(
+            query_embedding
+        )
+
+
+        # Search FAISS
+        scores, indices = index.search(
+
+            query_embedding,
+
+            top_k
+
+        )
+
+
+        retrieved = []
+
+
+        for i in indices[0]:
+
+            if i >= 0:
+
+                retrieved.append(
+                    all_chunks[i]
+                )
+
+
+        return retrieved
+
+
+    except Exception as e:
+
+        print(
+            "RAG retrieval error:",
+            str(e)
+        )
+
+
+        # ----------------------------------
+        # FALLBACK KNOWLEDGE
+        # ----------------------------------
+
+        return all_chunks[:top_k]
 
 
 # ==========================================
-# PDF TEXT EXTRACTION
+# 8. PDF TEXT EXTRACTION
 # ==========================================
 
 def extract_pdf_text(pdf_bytes):
@@ -323,91 +364,16 @@ def extract_pdf_text(pdf_bytes):
 
         if page_text:
 
-            text += page_text + "\n"
+            text += (
+                page_text + "\n"
+            )
 
 
     return text.strip()
 
 
 # ==========================================
-# SAFE JSON PARSER
-# ==========================================
-
-def parse_gemini_json(text):
-
-    if not text:
-
-        raise ValueError(
-            "Gemini returned an empty response."
-        )
-
-
-    cleaned_text = text.strip()
-
-
-    # Remove markdown JSON blocks
-    cleaned_text = re.sub(
-
-        r"^```json\s*",
-
-        "",
-
-        cleaned_text,
-
-        flags=re.IGNORECASE
-
-    )
-
-
-    cleaned_text = re.sub(
-
-        r"^```\s*",
-
-        "",
-
-        cleaned_text
-
-    )
-
-
-    cleaned_text = re.sub(
-
-        r"\s*```$",
-
-        "",
-
-        cleaned_text
-
-    )
-
-
-    cleaned_text = cleaned_text.strip()
-
-
-    # Find JSON object if extra text exists
-    match = re.search(
-
-        r"\{.*\}",
-
-        cleaned_text,
-
-        re.DOTALL
-
-    )
-
-
-    if match:
-
-        cleaned_text = match.group(0)
-
-
-    return json.loads(
-        cleaned_text
-    )
-
-
-# ==========================================
-# HOME API
+# 9. HOME API
 # ==========================================
 
 @app.get("/")
@@ -416,30 +382,35 @@ def home():
     return {
 
         "message":
-        "ResumeIQ RAG Backend Running Successfully!"
+            "ResumeIQ AI Backend Running!",
+
+        "rag_status":
+            "active"
+            if index is not None
+            else "fallback"
 
     }
 
 
 # ==========================================
-# HEALTH CHECK
+# 10. HEALTH CHECK
 # ==========================================
 
 @app.get("/health")
-def health_check():
+def health():
 
     return {
 
         "status": "healthy",
 
-        "service":
-        "ResumeIQ AI Backend"
+        "rag_available":
+            index is not None
 
     }
 
 
 # ==========================================
-# ANALYZE RESUME API
+# 11. ANALYZE RESUME API
 # ==========================================
 
 @app.post("/analyze")
@@ -453,54 +424,9 @@ async def analyze_resume(
 
     try:
 
-        print("\n===================================")
-        print("NEW RESUME ANALYSIS REQUEST")
-        print("===================================")
-
-
-        # ==========================================
-        # VALIDATE FILE
-        # ==========================================
-
-        if not resume.filename:
-
-            raise HTTPException(
-
-                status_code=400,
-
-                detail="Resume file is missing."
-
-            )
-
-
-        if not resume.filename.lower().endswith(".pdf"):
-
-            raise HTTPException(
-
-                status_code=400,
-
-                detail="Only PDF files are supported."
-
-            )
-
-
-        if not job_description.strip():
-
-            raise HTTPException(
-
-                status_code=400,
-
-                detail="Job description cannot be empty."
-
-            )
-
-
-        # ==========================================
-        # READ PDF
-        # ==========================================
-
-        print("Reading resume PDF...")
-
+        # ----------------------------------
+        # READ RESUME
+        # ----------------------------------
 
         pdf_bytes = await resume.read()
 
@@ -511,17 +437,14 @@ async def analyze_resume(
 
                 status_code=400,
 
-                detail="Uploaded PDF is empty."
+                detail="Uploaded resume is empty."
 
             )
 
 
-        # ==========================================
-        # EXTRACT TEXT
-        # ==========================================
-
-        print("Extracting resume text...")
-
+        # ----------------------------------
+        # EXTRACT PDF TEXT
+        # ----------------------------------
 
         resume_text = extract_pdf_text(
             pdf_bytes
@@ -535,52 +458,35 @@ async def analyze_resume(
                 status_code=400,
 
                 detail=(
-                    "Could not extract text from this PDF. "
+                    "Could not extract text from the PDF. "
                     "Please upload a text-based PDF."
                 )
 
             )
 
 
-        print(
-            f"Resume text extracted: "
-            f"{len(resume_text)} characters"
-        )
-
-
-        # ==========================================
-        # CREATE RAG QUERY
-        # ==========================================
+        # ----------------------------------
+        # RAG QUERY
+        # ----------------------------------
 
         rag_query = f"""
 
-        Find the most relevant information about:
+Find relevant ATS guidelines, resume improvement
+suggestions and technical skills.
 
-        1. ATS optimization
-        2. Resume improvement
-        3. Technical skills
-        4. Job requirements
+JOB DESCRIPTION:
 
-        JOB DESCRIPTION:
+{job_description}
 
-        {job_description}
-
-        """
+"""
 
 
-        # ==========================================
-        # RETRIEVE RAG CONTEXT
-        # ==========================================
-
-        print("Retrieving RAG context...")
-
+        # ----------------------------------
+        # RETRIEVE RAG KNOWLEDGE
+        # ----------------------------------
 
         retrieved_context = retrieve_context(
-
-            rag_query,
-
-            top_k=3
-
+            rag_query
         )
 
 
@@ -589,96 +495,73 @@ async def analyze_resume(
         )
 
 
-        # ==========================================
+        # ----------------------------------
         # GEMINI PROMPT
-        # ==========================================
+        # ----------------------------------
 
         prompt = f"""
-You are ResumeIQ, an advanced AI-powered Resume Analyzer.
+You are ResumeIQ, an AI-powered Resume Analyzer.
 
 Analyze the candidate's resume against the provided job description.
 
-Use the RAG knowledge as guidance.
+Use the retrieved knowledge to improve your recommendations.
 
-==============================
-RAG KNOWLEDGE
-==============================
+========================
+RETRIEVED RAG KNOWLEDGE
+========================
 
 {rag_context}
 
 
-==============================
-CANDIDATE RESUME
-==============================
+========================
+RESUME
+========================
 
 {resume_text}
 
 
-==============================
+========================
 JOB DESCRIPTION
-==============================
+========================
 
 {job_description}
 
 
-IMPORTANT:
-
 Return ONLY valid JSON.
 
-Do NOT include markdown.
-
-Do NOT include ```json.
-
-Use EXACTLY this JSON structure:
+Use EXACTLY this structure:
 
 {{
-  "overall_score": 0,
-  "ats_score": 0,
-  "skills_found": [],
-  "matching_skills": [],
-  "missing_skills": [],
-  "strengths": [],
-  "weaknesses": [],
-  "suggestions": [],
-  "recommended_roles": [],
-  "summary": ""
+    "overall_score": 0,
+    "ats_score": 0,
+    "skills_found": [],
+    "matching_skills": [],
+    "missing_skills": [],
+    "strengths": [],
+    "weaknesses": [],
+    "suggestions": [],
+    "recommended_roles": [],
+    "summary": ""
 }}
 
 
-RULES:
+IMPORTANT RULES:
 
 1. overall_score must be between 0 and 100.
-
 2. ats_score must be between 0 and 100.
-
-3. skills_found must contain skills actually detected in the resume.
-
-4. matching_skills must contain skills that match the job description.
-
-5. missing_skills must contain important job requirements missing from the resume.
-
-6. strengths must contain clear positive observations.
-
-7. weaknesses must contain areas needing improvement.
-
-8. suggestions must contain actionable resume improvements.
-
-9. recommended_roles must suggest suitable job roles.
-
-10. summary must provide a concise professional evaluation.
-
-11. Do not invent skills that are not present.
-
-12. Return valid JSON only.
+3. Compare the resume directly with the job description.
+4. Do not invent skills that are not supported by the resume.
+5. Identify important missing skills.
+6. Give useful and realistic suggestions.
+7. Return ONLY valid JSON.
+8. Do not use Markdown.
+9. Do not wrap JSON in ```json.
 """
 
 
-        # ==========================================
+        # ----------------------------------
         # GEMINI ANALYSIS
-        # ==========================================
-
-        print("Sending request to Gemini AI...")
-
+        # ----------------------------------
 
         response = client.models.generate_content(
 
@@ -689,34 +572,64 @@ RULES:
         )
 
 
-        # ==========================================
-        # PARSE RESPONSE
-        # ==========================================
+        # ----------------------------------
+        # GET RESPONSE
+        # ----------------------------------
 
-        print("Processing Gemini response...")
+        result_text = response.text.strip()
 
 
-        analysis_result = parse_gemini_json(
-            response.text
+        # ----------------------------------
+        # CLEAN MARKDOWN IF PRESENT
+        # ----------------------------------
+
+        result_text = re.sub(
+
+            r"^```json\s*",
+
+            "",
+
+            result_text,
+
+            flags=re.IGNORECASE
+
         )
 
 
-        # ==========================================
-        # ADD METADATA
-        # ==========================================
+        result_text = re.sub(
 
-        analysis_result["resume_name"] = (
-            resume.filename
+            r"^```\s*",
+
+            "",
+
+            result_text
+
         )
 
 
-        print("Analysis completed successfully!")
+        result_text = re.sub(
 
-        print(
-            "Overall Score:",
-            analysis_result.get("overall_score")
+            r"\s*```$",
+
+            "",
+
+            result_text
+
+        ).strip()
+
+
+        # ----------------------------------
+        # CONVERT JSON
+        # ----------------------------------
+
+        analysis_result = json.loads(
+            result_text
         )
 
+
+        # ----------------------------------
+        # RETURN RESULT
+        # ----------------------------------
 
         return analysis_result
 
@@ -726,19 +639,38 @@ RULES:
         raise
 
 
-    except Exception as error:
+    except json.JSONDecodeError as e:
 
-        print("\n===================================")
-        print("ANALYSIS ERROR")
-        print("===================================")
-
-        print(str(error))
+        print(
+            "JSON PARSE ERROR:",
+            str(e)
+        )
 
 
         raise HTTPException(
 
             status_code=500,
 
-            detail=str(error)
+            detail=(
+                "AI returned an invalid response. "
+                "Please try again."
+            )
+
+        )
+
+
+    except Exception as e:
+
+        print(
+            "ERROR:",
+            str(e)
+        )
+
+
+        raise HTTPException(
+
+            status_code=500,
+
+            detail=str(e)
 
         )
